@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+
+
+
+
+<fieldset class="fieldset">
+  <div class="tablink">
+    <a href="{% url 'group_add'%}">
+      <h1 onclick="openPage('new')" id="defaultOpen">Add Group</h1>
+    </a>
+    <h1 onclick="openPage('edit')" id="link_to_edit">Edit Group</h1>
+  </div>
+  <div class="tabcontent" id="edit">
+    <table class="editTable">
+      <thead>
+        <tr class="table-headers">
+          <th>Section Id</th>
+          <th>Department</th>
+          <th>Total Classes</th>
+          <th class="empty"></th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for group in groups %}
+        <tr>
+          <td>{{ group.group_code }}</td>
+          <td>{{ group.faculty.faculty_name }}</td>
+          <td>{{ group.weekly_sessions }}</td>
+          <td class="empty">
+            <form action="{% url 'delete_group' group.pk %}" method="post">
+              {% csrf_token %}
+              <input type="submit" value="X" class="cross">
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="4">No groups found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+
+    </table>
+  </div>
+</fieldset>
+
+{% endblock %}

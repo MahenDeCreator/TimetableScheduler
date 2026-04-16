@@ -2,12 +2,12 @@
 {% load index %}
 
 {% url 'home' as home%}
-{% url 'instructorAdd' as instructorAdd %}
-{% url 'roomAdd' as roomAdd %}
-{% url 'meetingTimeAdd' as meetingTimeAdd %}
-{% url 'courseAdd' as courseAdd %}
-{% url 'departmentAdd' as departmentAdd %}
-{% url 'sectionAdd' as sectionAdd %}
+{% url 'teacher_add' as teacher_add %}
+{% url 'classroom_add' as classroom_add %}
+{% url 'time_slot_add' as time_slot_add %}
+{% url 'subject_add' as subject_add %}
+{% url 'faculty_add' as faculty_add %}
+{% url 'group_add' as group_add %}
 
 
 <!DOCTYPE html>
@@ -29,6 +29,8 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro&display=swap">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Quicksand:400,500,700">
   <link rel="stylesheet" type="text/css" href="{% static 'CSS/style.css' %}">
+  <script src="https://unpkg.com/htmx.org@2.0.0"></script>
+  
 </head>
 
 <body>
@@ -43,19 +45,26 @@
           <span class="line line3"></span>
         </div>
         <div class="logo">
-          <h2><a href="{{ home }}">Time-Table Scheduler</a></h2>
-          <h4>Schedule Timetable with ease</h4>
+          <h1><a href="{{ home }}">AI-SCHEDULE</a></h1>
+          <h3>Effortless planning and scheduling</h3>
         </div>
         <ul class="menu-items">
           <li class="{% active request home %}"><a href="{{ home }}">Home</a></li>
-          <li class="{% active request instructorAdd %}"><a href="{{ instructorAdd }}">Instructor</a></li>
-          <li class="{% active request roomAdd %}"><a href="{{ roomAdd }}">Room</a></li>
-          <li class="{% active request meetingTimeAdd %}"><a href="{{ meetingTimeAdd }}">Meeting time</a></li>
-          <li class="{% active request courseAdd %}"><a href="{{ courseAdd }}">Course</a></li>
-          <li class="{% active request departmentAdd %}"><a href="{{ departmentAdd }}">Department</a></li>
-          <li class="{% active request sectionAdd %}"><a href="{{ sectionAdd }}">Section</a></li>
+          <li class="{% active request teacher_add %}"><a href="{{ teacher_add }}">Teacher</a></li>
+          <li class="{% active request classroom_add %}"><a href="{{ classroom_add }}">Classroom</a></li>
+          <li class="{% active request time_slot_add %}"><a href="{{ time_slot_add }}">Time Slot</a></li>
+          <li class="{% active request subject_add %}"><a href="{{ subject_add }}">Subject</a></li>
+          <li class="{% active request faculty_add %}"><a href="{{ faculty_add }}">Faculty</a></li>
+          <li class="{% active request group_add %}"><a href="{{ group_add }}">Group</a></li>
           {% if user.is_authenticated %}
-          <li><a href="{% url 'logout' %}"><i style="font-size:1.6rem" class="fa">&#xf08b;</i></a></li>
+          <li>
+            <form id="logout-form" method="post" action="{% url 'logout' %}">
+              {% csrf_token %}
+              <button type="submit" style="background: none; border: none; color: inherit; cursor: pointer;">
+                <i style="font-size:1.6rem" class="fa">&#xf08b;</i>
+              </button>
+            </form>
+          </li>
           {% endif %}
         </ul>
       </div>
@@ -78,6 +87,55 @@
   <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/js/bootstrap.min.js"
     integrity="sha384-JjSmVgyd0p3pXB1rRibZUAYoIIy6OrQ6VrjIEaFf/nJGzIxFDsf4x0xIM+B07jRM"
     crossorigin="anonymous"></script>
+    <link rel="stylesheet" type="text/css" href="{% static 'CSS/style.css' %}">
+<script src="https://unpkg.com/htmx.org@2.0.0"></script>
+
+<style>
+  /* Modern Navy Palette */
+  body {
+    background-color: #f8fafc;
+    font-family: 'Quicksand', sans-serif; /* Using the font you already linked */
+  }
+
+  .navbar {
+    background-color: #1c2432 !important; /* Deep Navy */
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    padding: 1rem 2rem;
+  }
+
+  .logo h1 a {
+    color: #3b82f6 !important; /* Bright Blue Logo */
+    font-weight: 700;
+  }
+  
+  .logo h3 {
+    color: #ffffff !important;
+    font-weight: 400;
+  }
+
+  .menu-items li a {
+    color: #ffffff !important;
+    transition: all 0.3s ease;
+    font-weight: 500;
+  }
+
+  /* Target the active class your project uses */
+  .menu-items li.active a, 
+  .menu-items li:hover a {
+    color: #ffffff !important;
+    background-color: #3b82f6;
+    border-radius: 6px;
+    padding: 8px 15px;
+  }
+
+  /* HTMX Spinner logic */
+  .htmx-indicator {
+    display: none;
+  }
+  .htmx-request .htmx-indicator {
+    display: inline-block;
+  }
+</style>
 </body>
 
 </html>

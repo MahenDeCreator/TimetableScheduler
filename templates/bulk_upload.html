@@ -1,0 +1,21 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container mt-5">
+    <h2>Bulk Data Uploader</h2>
+    <p>Upload a CSV file to populate rooms or courses instantly.</p>
+    
+    <form action="" method="POST" enctype="multipart/form-data" class="form-group">
+        {% csrf_token %}
+        <div class="mb-3">
+            <label for="file" class="form-label">Choose CSV File</label>
+            <input type="file" name="file" id="file" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Upload to System</button>
+    </form>
+
+    <div class="mt-4">
+        <h4>Expected CSV Format (Rooms):</h4>
+        <code>room_number, capacity</code>
+    </div>
+</div>
+{% endblock %}

@@ -70,9 +70,9 @@ button {
   position: relative;
   width: 100%;
   background: var(--white);
-  color: #000;
+  color: #000000;
   opacity: 0.85;
-  height: 10rem;
+  height: 5rem;
   z-index: 12;
 }
 
@@ -94,28 +94,32 @@ button {
 
 .menu-items li {
   list-style: none;
-  margin-left: 1.5rem;
-  font-size: 1.2rem;
+  margin-left: 1rem;
+  font-size: 0.95rem;
   position: relative;
+  display: inline-block;
 }
 
 .menu-items a {
   text-decoration: none;
   color: var(--dark-grey);
   position: relative;
-  font-size: 1.3rem;
+  font-size: 1rem;
   font-weight: 500;
   transition: color 0.3s ease-in-out;
+  padding: 0.5rem 0.75rem;
+  display: block;
 }
 
 .logo {
   order: 1;
-  font-size: 3rem;
+  font-size: 1.8rem;
+  white-space: nowrap;
 }
 
 .container-fluid {
   position: relative;
-  top: 4rem;
+  top: 2rem;
   padding-bottom: 4rem;
 }
 
@@ -384,10 +388,12 @@ fieldset {
 }
 
 .formpart {
-  display: flex;
-  justify-content: center;
-  height: auto;
-  width: 100%;
+  background: rgb(172, 146, 146);
+  margin-top: 30px;
+  padding: 40px;
+  border-radius: 15px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+  border: 1px solid #33383f;
 }
 
 .tablink {

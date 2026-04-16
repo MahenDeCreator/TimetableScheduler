@@ -1,481 +1,558 @@
-from django.http.response import HttpResponse
-from django.shortcuts import render, redirect
-from django.http import JsonResponse
-from django.contrib.auth.decorators import login_required
-from .models import *
-from .forms import *
-from collections import defaultdict
+﻿from collections import defaultdict
+import csv
+import io
+import os
 import random
 
-POPULATION_SIZE = 30
-NUMB_OF_ELITE_SCHEDULES = 2
-TOURNAMENT_SELECTION_SIZE = 8
-MUTATION_RATE = 0.05
-VARS = {'generationNum': 0,
-        'terminateGens': False}
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.http import HttpResponse, JsonResponse
+from django.shortcuts import render, redirect
+
+import joblib
+
+from .forms import (
+    ClassroomForm,
+    FacultyForm,
+    GroupForm,
+    SubjectForm,
+    TeacherForm,
+    TimeSlotForm,
+)
+from .models import (
+    Classroom,
+    Faculty,
+    Group,
+    Subject,
+    Teacher,
+    TIME_SLOTS,
+    DAYS_OF_WEEK,
+    TimeSlot,
+)
 
 
-class Population:
+# Evolutionary algorithm constants
+GENE_POOL_SIZE = 30
+ELITE_COUNT = 2
+SELECTION_POOL = 8
+MUTATION_PROB = 0.05
+TRACK_VARS = {
+    'gen_count': 0,
+    'stop_evolution': False,
+}
+
+
+# ===== Utility functions =====
+
+def run_ai_check(student_count, room_size, has_projector):
+    """Evaluate a room assignment via a pre-trained AI model."""
+    model_path = os.path.join(os.path.dirname(__file__), 'scheduler_model.pkl')
+
+    try:
+        model = joblib.load(model_path)
+        output = model.predict([[student_count, room_size, has_projector]])
+        return 'AI Approved' if output[0] == 1 else 'AI Warning: Inefficient'
+    except Exception:
+        return 'AI Offline'
+
+
+def bulk_upload_csv(request):
+    """Handle CSV bulk uploads for the Classroom model."""
+    if request.method == 'GET':
+        return render(request, 'bulk_upload.html')
+
+    try:
+        csv_file = request.FILES.get('file')
+        if not csv_file or not csv_file.name.endswith('.csv'):
+            messages.error(request, 'Please upload a CSV file.')
+            return redirect('bulk_upload')
+
+        data_set = csv_file.read().decode('UTF-8')
+        io_string = io.StringIO(data_set)
+        next(io_string, None)  # skip header row
+
+        for row in csv.reader(io_string, delimiter=',', quotechar='|'):
+            Classroom.objects.update_or_create(
+                room_code=row[0],
+                defaults={'capacity': row[1]},
+            )
+
+        messages.success(request, 'File uploaded and processed successfully!')
+        return redirect('bulk_upload')
+
+    except Exception as exc:
+        messages.error(request, f'Error: {exc}')
+        return redirect('bulk_upload')
+
+
+# ===== Data model facades for EA =====
+
+
+class GenePool:
     def __init__(self, size):
         self._size = size
-        self._data = data
-        self._schedules = [Schedule().initialize() for i in range(size)]
+        self._dataset = dataset
+        self._timetables = [Timetable().build() for _ in range(size)]
 
-    def getSchedules(self):
-        return self._schedules
+    def get_timetables(self):
+        return self._timetables
 
 
-class Data:
+class Dataset:
     def __init__(self):
-        self._rooms = Room.objects.all()
-        self._meetingTimes = MeetingTime.objects.all()
-        self._instructors = Instructor.objects.all()
-        self._courses = Course.objects.all()
-        self._depts = Department.objects.all()
-        self._sections = Section.objects.all()
+        self._classrooms = Classroom.objects.all()
+        self._time_slots = TimeSlot.objects.all()
+        self._teachers = Teacher.objects.all()
+        self._subjects = Subject.objects.all()
+        self._faculties = Faculty.objects.all()
+        self._groups = Group.objects.all()
 
-    def get_rooms(self):
-        return self._rooms
+    def get_classrooms(self):
+        return self._classrooms
 
-    def get_instructors(self):
-        return self._instructors
+    def get_teachers(self):
+        return self._teachers
 
-    def get_courses(self):
-        return self._courses
+    def get_subjects(self):
+        return self._subjects
 
-    def get_depts(self):
-        return self._depts
+    def get_faculties(self):
+        return self._faculties
 
-    def get_meetingTimes(self):
-        return self._meetingTimes
+    def get_time_slots(self):
+        return self._time_slots
 
-    def get_sections(self):
-        return self._sections
-
-
-class Class:
-    def __init__(self, dept, section, course):
-        self.department = dept
-        self.course = course
-        self.instructor = None
-        self.meeting_time = None
-        self.room = None
-        self.section = section
-
-    def get_id(self):
-        return self.section_id
-
-    def get_dept(self):
-        return self.department
-
-    def get_course(self):
-        return self.course
-
-    def get_instructor(self):
-        return self.instructor
-
-    def get_meetingTime(self):
-        return self.meeting_time
-
-    def get_room(self):
-        return self.room
-
-    def set_instructor(self, instructor):
-        self.instructor = instructor
-
-    def set_meetingTime(self, meetingTime):
-        self.meeting_time = meetingTime
-
-    def set_room(self, room):
-        self.room = room
+    def get_groups(self):
+        return self._groups
 
 
-class Schedule:
+class Session:
+    def __init__(self, faculty, group, subject):
+        self.faculty = faculty
+        self.subject = subject
+        self.teacher = None
+        self.time_slot = None
+        self.classroom = None
+        self.group = group
+
+    def get_group_id(self):
+        return self.group.group_code
+
+    def get_faculty(self):
+        return self.faculty
+
+    def get_subject(self):
+        return self.subject
+
+    def get_teacher(self):
+        return self.teacher
+
+    def get_time_slot(self):
+        return self.time_slot
+
+    def get_classroom(self):
+        return self.classroom
+
+    def assign_teacher(self, teacher):
+        self.teacher = teacher
+
+    def assign_time_slot(self, time_slot):
+        self.time_slot = time_slot
+
+    def assign_classroom(self, classroom):
+        self.classroom = classroom
+
+
+class Timetable:
     def __init__(self):
-        self._data = data
-        self._classes = []
-        self._numberOfConflicts = 0
-        self._fitness = -1
-        self._isFitnessChanged = True
+        self._dataset = dataset
+        self._sessions = []
+        self._conflict_count = 0
+        self._score = -1
+        self._score_updated = True
 
-    def getClasses(self):
-        self._isFitnessChanged = True
-        return self._classes
+    def get_sessions(self):
+        self._score_updated = True
+        return self._sessions
 
-    def getNumbOfConflicts(self):
-        return self._numberOfConflicts
+    def get_conflict_count(self):
+        return self._conflict_count
 
-    def getFitness(self):
-        if self._isFitnessChanged:
-            self._fitness = self.calculateFitness()
-            self._isFitnessChanged = False
-        return self._fitness
+    def get_score(self):
+        if self._score_updated:
+            self._score = self.compute_score()
+            self._score_updated = False
+        return self._score
 
-    def addCourse(self, data, course, courses, dept, section):
-        newClass = Class(dept, section.section_id, course)
+    def add_subject(self, data_obj, subject, subjects, faculty, group):
+        new_session = Session(faculty, group, subject)
 
-        newClass.set_meetingTime(
-            data.get_meetingTimes()[random.randrange(0, len(data.get_meetingTimes()))])
+        new_session.assign_time_slot(random.choice(data_obj.get_time_slots()))
+        new_session.assign_classroom(random.choice(data_obj.get_classrooms()))
 
-        newClass.set_room(
-            data.get_rooms()[random.randrange(0, len(data.get_rooms()))])
+        subj_teachers = list(subject.assigned_teachers.all())
+        if subj_teachers:
+            new_session.assign_teacher(random.choice(subj_teachers))
 
-        crs_inst = course.instructors.all()
-        newClass.set_instructor(
-            crs_inst[random.randrange(0, len(crs_inst))])
+        self._sessions.append(new_session)
 
-        self._classes.append(newClass)
+    def build(self):
+        all_groups = Group.objects.select_related('faculty').all()
 
-    def initialize(self):
-        sections = Section.objects.all()
-        for section in sections:
-            dept = section.department
-            n = section.num_class_in_week
+        for group in all_groups:
+            fac = group.faculty
+            required_sessions = min(group.weekly_sessions, len(dataset.get_time_slots()))
+            subjects = list(fac.offered_subjects.all())
 
-            if n > len(data.get_meetingTimes()):
-                n = len(data.get_meetingTimes())
+            if not subjects:
+                continue
 
-            courses = dept.courses.all()
-            for course in courses:
-                for i in range(n // len(courses)):
-                    self.addCourse(data, course, courses, dept, section)
+            sessions_per_subject = required_sessions // len(subjects)
+            extra_sessions = required_sessions % len(subjects)
 
-            for course in courses.order_by('?')[:(n % len(courses))]:
-                self.addCourse(data, course, courses, dept, section)
+            for subject in subjects:
+                for _ in range(sessions_per_subject):
+                    self.add_subject(dataset, subject, subjects, fac, group)
+
+            selected_subjects = random.sample(subjects, extra_sessions)
+            for subject in selected_subjects:
+                self.add_subject(dataset, subject, subjects, fac, group)
 
         return self
 
-    def calculateFitness(self):
-        self._numberOfConflicts = 0
-        classes = self.getClasses()
+    def compute_score(self):
+        self._conflict_count = 0
+        sessions = self.get_sessions()
 
-        for i in range(len(classes)):
-            # Seating capacity less them course student
-            if classes[i].room.seating_capacity < int(classes[i].course.max_numb_students):
-                self._numberOfConflicts += 1
+        for i, current in enumerate(sessions):
+            if current.classroom.capacity < int(current.subject.max_students):
+                self._conflict_count += 1
 
-            # print(classes[i].course.course_name, classes[i].meeting_time, classes[i].section, classes[i].room, classes[i].instructor)
+            for other in sessions[i + 1:]:
+                same_subject_same_day = (
+                    current.subject.subject_title == other.subject.subject_title
+                    and current.time_slot.weekday == other.time_slot.weekday
+                )
+                teacher_conflict = (
+                    current.group != other.group
+                    and current.time_slot == other.time_slot
+                    and current.teacher == other.teacher
+                )
+                group_time_conflict = (
+                    current.group == other.group
+                    and current.time_slot == other.time_slot
+                )
 
-            for j in range(i + 1, len(classes)):
-                # Same course on same day
-                if (classes[i].course.course_name == classes[j].course.course_name and \
-                    str(classes[i].meeting_time).split()[1] == str(classes[j].meeting_time).split()[1]):
-                    self._numberOfConflicts += 1
+                if same_subject_same_day or teacher_conflict or group_time_conflict:
+                    self._conflict_count += 1
 
-                # Teacher with lectures in different timetable at same time
-                if (classes[i].section != classes[j].section and \
-                    classes[i].meeting_time == classes[j].meeting_time and \
-                    classes[i].instructor == classes[j].instructor):
-                    self._numberOfConflicts += 1
-
-                # Duplicate time in a department
-                if (classes[i].section == classes[j].section and \
-                    classes[i].meeting_time == classes[j].meeting_time):
-                    self._numberOfConflicts += 1
-
-        return 1 / (self._numberOfConflicts + 1)
+        return 1 / (self._conflict_count + 1)
 
 
-class GeneticAlgorithm:
-    def evolve(self, population):
-        return self._mutatePopulation(self._crossoverPopulation(population))
+class EvolutionaryOptimizer:
+    def evolve(self, gene_pool):
+        return self._apply_mutation(self._perform_crossover(gene_pool))
 
-    def _crossoverPopulation(self, popula):
-        crossoverPopula = Population(0)
-        for i in range(NUMB_OF_ELITE_SCHEDULES):
-            crossoverPopula.getSchedules().append(popula.getSchedules()[i])
+    def _perform_crossover(self, pool):
+        crossover_pool = GenePool(0)
+        elites = pool.get_timetables()[:ELITE_COUNT]
+        crossover_pool.get_timetables().extend(elites)
 
-        for i in range(NUMB_OF_ELITE_SCHEDULES, POPULATION_SIZE):
-            scheduleX = self._tournamentPopulation(popula)
-            scheduleY = self._tournamentPopulation(popula)
+        for _ in range(ELITE_COUNT, GENE_POOL_SIZE):
+            parent_a = self._select_parent(pool)
+            parent_b = self._select_parent(pool)
+            crossover_pool.get_timetables().append(
+                self._crossover_timetable(parent_a, parent_b)
+            )
 
-            crossoverPopula.getSchedules().append(
-                self._crossoverSchedule(scheduleX, scheduleY))
+        return crossover_pool
 
-        return crossoverPopula
+    def _apply_mutation(self, pool):
+        for i in range(ELITE_COUNT, GENE_POOL_SIZE):
+            self._mutate_timetable(pool.get_timetables()[i])
+        return pool
 
-    def _mutatePopulation(self, population):
-        for i in range(NUMB_OF_ELITE_SCHEDULES, POPULATION_SIZE):
-            self._mutateSchedule(population.getSchedules()[i])
-        return population
+    def _crossover_timetable(self, timetable_a, timetable_b):
+        offspring = Timetable().build()
+        offspring_sessions = []
 
-    def _crossoverSchedule(self, scheduleX, scheduleY):
-        crossoverSchedule = Schedule().initialize()
-        for i in range(0, len(crossoverSchedule.getClasses())):
-            if random.random() > 0.5:
-                crossoverSchedule.getClasses()[i] = scheduleX.getClasses()[i]
-            else:
-                crossoverSchedule.getClasses()[i] = scheduleY.getClasses()[i]
-        return crossoverSchedule
+        for sess_a, sess_b in zip(timetable_a.get_sessions(), timetable_b.get_sessions()):
+            selected = sess_a if random.random() > 0.5 else sess_b
+            offspring_sessions.append(selected)
 
-    def _mutateSchedule(self, mutateSchedule):
-        schedule = Schedule().initialize()
-        for i in range(len(mutateSchedule.getClasses())):
-            if MUTATION_RATE > random.random():
-                mutateSchedule.getClasses()[i] = schedule.getClasses()[i]
-        return mutateSchedule
+        offspring.get_sessions().clear()
+        offspring.get_sessions().extend(offspring_sessions)
+        return offspring
 
-    def _tournamentPopulation(self, popula):
-        tournamentPopula = Population(0)
+    def _mutate_timetable(self, timetable):
+        fresh_timetable = Timetable().build()
+        for idx in range(len(timetable.get_sessions())):
+            if MUTATION_PROB > random.random():
+                timetable.get_sessions()[idx] = fresh_timetable.get_sessions()[idx]
+        return timetable
 
-        for i in range(0, TOURNAMENT_SELECTION_SIZE):
-            tournamentPopula.getSchedules().append(
-                popula.getSchedules()[random.randrange(0, POPULATION_SIZE)])
-
-        # tournamentPopula.getSchedules().sort(key=lambda x: x.getFitness(),reverse=True)
-        # return tournamentPopula
-        return max(tournamentPopula.getSchedules(), key=lambda x: x.getFitness())
+    def _select_parent(self, pool):
+        contenders = random.sample(pool.get_timetables(), SELECTION_POOL)
+        return max(contenders, key=lambda t: t.get_score())
 
 
-
-def context_manager(schedule):
-    classes = schedule.getClasses()
-    context = []
-    for i in range(len(classes)):
-        clas = {}
-        clas['section'] = classes[i].section_id
-        clas['dept'] = classes[i].department.dept_name
-        clas['course'] = f'{classes[i].course.course_name} ({classes[i].course.course_number} {classes[i].course.max_numb_students})'
-        clas['room'] = f'{classes[i].room.r_number} ({classes[i].room.seating_capacity})'
-        clas['instructor'] = f'{classes[i].instructor.name} ({classes[i].instructor.uid})'
-        clas['meeting_time'] = [
-            classes[i].meeting_time.pid,
-            classes[i].meeting_time.day,
-            classes[i].meeting_time.time
-        ]
-        context.append(clas)
-    return context
+def prepare_context(timetable):
+    """Convert algorithm timetable sessions into template-friendly dicts."""
+    return [
+        {
+            'group': item.group.group_code,
+            'faculty': item.faculty.faculty_name,
+            'subject': f'{item.subject.subject_title} ({item.subject.subject_code} {item.subject.max_students})',
+            'classroom': f'{item.classroom.room_code} ({item.classroom.capacity})',
+            'teacher': f'{item.teacher.full_name} ({item.teacher.teacher_id})',
+            'time_slot': [item.time_slot.slot_id, item.time_slot.weekday, item.time_slot.duration],
+        }
+        for item in timetable.get_sessions()
+    ]
 
 
-def apiGenNum(request):
-    return JsonResponse({'genNum': VARS['generationNum']})
+def api_gen_count(request):
+    return JsonResponse({'genNum': TRACK_VARS['gen_count']})
 
-def apiterminateGens(request):
-    VARS['terminateGens'] = True
+
+def api_stop_evolution(request):
+    TRACK_VARS['stop_evolution'] = True
     return redirect('home')
 
 
+# ===== Views =====
 
 @login_required
 def timetable(request):
-    global data
-    data = Data()
-    population = Population(POPULATION_SIZE)
-    VARS['generationNum'] = 0
-    VARS['terminateGens'] = False
-    population.getSchedules().sort(key=lambda x: x.getFitness(), reverse=True)
-    geneticAlgorithm = GeneticAlgorithm()
-    schedule = population.getSchedules()[0]
+    global dataset
+    dataset = Dataset()
 
-    while (schedule.getFitness() != 1.0) and (VARS['generationNum'] < 100):
-        if VARS['terminateGens']:
+    gene_pool = GenePool(GENE_POOL_SIZE)
+    TRACK_VARS['gen_count'] = 0
+    TRACK_VARS['stop_evolution'] = False
+
+    gene_pool.get_timetables().sort(key=lambda t: t.get_score(), reverse=True)
+    optimizer = EvolutionaryOptimizer()
+    best_timetable = gene_pool.get_timetables()[0]
+
+    history = [
+        {
+            'gen': TRACK_VARS['gen_count'],
+            'fitness': best_timetable.get_score(),
+            'conflicts': best_timetable.get_conflict_count(),
+        }
+    ]
+
+    while best_timetable.get_score() != 1.0 and TRACK_VARS['gen_count'] < 100:
+        if TRACK_VARS['stop_evolution']:
             return HttpResponse('')
 
-        population = geneticAlgorithm.evolve(population)
-        population.getSchedules().sort(key=lambda x: x.getFitness(), reverse=True)
-        schedule = population.getSchedules()[0]
-        VARS['generationNum'] += 1
+        gene_pool = optimizer.evolve(gene_pool)
+        gene_pool.get_timetables().sort(key=lambda t: t.get_score(), reverse=True)
+        best_timetable = gene_pool.get_timetables()[0]
 
-        # for c in schedule.getClasses():
-        #     print(c.course.course_name, c.meeting_time)
-        print(f'\n> Generation #{VARS["generationNum"]}, Fitness: {schedule.getFitness()}')
+        TRACK_VARS['gen_count'] += 1
+        history.append(
+            {
+                'gen': TRACK_VARS['gen_count'],
+                'fitness': best_timetable.get_score(),
+                'conflicts': best_timetable.get_conflict_count(),
+            }
+        )
+        print(f'> Generation #{TRACK_VARS["gen_count"]}, Score: {best_timetable.get_score()}')
 
     return render(
         request, 'timetable.html', {
-            'schedule': schedule.getClasses(),
-            'sections': data.get_sections(),
-            'times': data.get_meetingTimes(),
-            'timeSlots': TIME_SLOTS,
-            'weekDays': DAYS_OF_WEEK
-        })
+            'groups': Group.objects.select_related('faculty').all(),
+            'schedule': best_timetable.get_sessions(),
+            'time_slots': TIME_SLOTS,
+            'week_days': DAYS_OF_WEEK,
+            'history': history,
+            'pop_size': GENE_POOL_SIZE,
+            'mutation_rate': MUTATION_PROB,
+            'total_gens': TRACK_VARS['gen_count'],
+            'context_data': prepare_context(best_timetable),
+        }
+    )
 
-
-'''
-Page Views
-'''
 
 def home(request):
     return render(request, 'index.html', {})
 
 
 @login_required
-def instructorAdd(request):
-    form = InstructorForm(request.POST or None)
+def teacher_add(request):
+    form = TeacherForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('teacher_add')
+
+    return render(request, 'teacherAdd.html', {'form': form})
+
+
+@login_required
+def teacher_edit(request):
+    return render(request, 'teacherEdit.html', {'teachers': Teacher.objects.all()})
+
+
+@login_required
+def teacher_delete(request, pk):
     if request.method == 'POST':
-        if form.is_valid():
-            form.save()
-            return redirect('instructorAdd')
-    context = {'form': form}
-    return render(request, 'instructorAdd.html', context)
+        Teacher.objects.filter(pk=pk).delete()
+        return redirect('teacher_edit')
 
 
 @login_required
-def instructorEdit(request):
-    context = {'instructors': Instructor.objects.all()}
-    return render(request, 'instructorEdit.html', context)
+def classroom_add(request):
+    form = ClassroomForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('classroom_add')
+
+    return render(request, 'classroomAdd.html', {'form': form})
 
 
 @login_required
-def instructorDelete(request, pk):
-    inst = Instructor.objects.filter(pk=pk)
+def classroom_edit(request):
+    return render(request, 'classroomEdit.html', {'classrooms': Classroom.objects.all()})
+
+
+@login_required
+def classroom_delete(request, pk):
     if request.method == 'POST':
-        inst.delete()
-        return redirect('instructorEdit')
+        Classroom.objects.filter(pk=pk).delete()
+        return redirect('classroom_edit')
 
 
 @login_required
-def roomAdd(request):
-    form = RoomForm(request.POST or None)
+def time_slot_add(request):
+    form = TimeSlotForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('time_slot_add')
+
+    return render(request, 'timeSlotAdd.html', {'form': form})
+
+
+@login_required
+def time_slot_edit(request):
+    return render(request, 'timeSlotEdit.html', {'time_slots': TimeSlot.objects.all()})
+
+
+@login_required
+def time_slot_delete(request, pk):
     if request.method == 'POST':
-        if form.is_valid():
-            form.save()
-            return redirect('roomAdd')
-    context = {'form': form}
-    return render(request, 'roomAdd.html', context)
+        TimeSlot.objects.filter(pk=pk).delete()
+        return redirect('time_slot_edit')
 
 
 @login_required
-def roomEdit(request):
-    context = {'rooms': Room.objects.all()}
-    return render(request, 'roomEdit.html', context)
+def subject_add(request):
+    form = SubjectForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('subject_add')
+
+    return render(request, 'subjectAdd.html', {'form': form})
 
 
 @login_required
-def roomDelete(request, pk):
-    rm = Room.objects.filter(pk=pk)
+def subject_edit(request):
+    teacher_map = defaultdict(list)
+
+    for mapping in Subject.assigned_teachers.through.objects.all():
+        subject_code = mapping.subject_id
+        teacher_name = (
+            Teacher.objects.filter(id=mapping.teacher_id)
+            .values_list('full_name', flat=True)
+            .first()
+        )
+        if teacher_name:
+            teacher_map[subject_code].append(teacher_name)
+
+    return render(
+        request,
+        'subjectEdit.html',
+        {'subjects': Subject.objects.all(), 'teacher': teacher_map},
+    )
+
+
+@login_required
+def subject_delete(request, pk):
     if request.method == 'POST':
-        rm.delete()
-        return redirect('roomEdit')
+        Subject.objects.filter(pk=pk).delete()
+        return redirect('subject_edit')
 
 
 @login_required
-def meetingTimeAdd(request):
-    form = MeetingTimeForm(request.POST or None)
+def faculty_add(request):
+    form = FacultyForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('faculty_add')
+
+    return render(request, 'facultyAdd.html', {'form': form})
+
+
+@login_required
+def faculty_edit(request):
+    subject_map = defaultdict(list)
+    for fac_subject in Faculty.offered_subjects.through.objects.all():
+        faculty_name = (
+            Faculty.objects.filter(id=fac_subject.faculty_id)
+            .values_list('faculty_name', flat=True)
+            .first()
+        )
+        subject_title = (
+            Subject.objects.filter(subject_code=fac_subject.subject_id)
+            .values_list('subject_title', flat=True)
+            .first()
+        )
+        if faculty_name and subject_title:
+            subject_map[faculty_name].append(subject_title)
+
+    return render(
+        request,
+        'facultyEdit.html',
+        {'faculties': Faculty.objects.all(), 'subject': subject_map},
+    )
+
+
+@login_required
+def faculty_delete(request, pk):
     if request.method == 'POST':
-        if form.is_valid():
-            form.save()
-            return redirect('meetingTimeAdd')
-        else:
-            print('Invalid')
-    context = {'form': form}
-    return render(request, 'meetingTimeAdd.html', context)
+        Faculty.objects.filter(pk=pk).delete()
+        return redirect('faculty_edit')
 
 
 @login_required
-def meetingTimeEdit(request):
-    context = {'meeting_times': MeetingTime.objects.all()}
-    return render(request, 'meetingTimeEdit.html', context)
+def group_add(request):
+    form = GroupForm(request.POST or None)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('group_add')
+
+    return render(request, 'groupAdd.html', {'form': form})
 
 
 @login_required
-def meetingTimeDelete(request, pk):
-    mt = MeetingTime.objects.filter(pk=pk)
+def group_edit(request):
+    return render(request, 'groupEdit.html', {'groups': Group.objects.all()})
+
+
+@login_required
+def group_delete(request, pk):
     if request.method == 'POST':
-        mt.delete()
-        return redirect('meetingTimeEdit')
+        Group.objects.filter(pk=pk).delete()
+        return redirect('group_edit')
 
 
-@login_required
-def courseAdd(request):
-    form = CourseForm(request.POST or None)
-    if request.method == 'POST':
-        if form.is_valid():
-            form.save()
-            return redirect('courseAdd')
-        else:
-            print('Invalid')
-    context = {'form': form}
-    return render(request, 'courseAdd.html', context)
+# ===== Error handlers =====
 
-
-@login_required
-def courseEdit(request):
-    instructor = defaultdict(list)
-    for course in Course.instructors.through.objects.all():
-        course_number = course.course_id
-        instructor_name = Instructor.objects.filter(
-            id=course.instructor_id).values('name')[0]['name']
-        instructor[course_number].append(instructor_name)
-
-    context = {'courses': Course.objects.all(), 'instructor': instructor}
-    return render(request, 'courseEdit.html', context)
-
-
-@login_required
-def courseDelete(request, pk):
-    crs = Course.objects.filter(pk=pk)
-    if request.method == 'POST':
-        crs.delete()
-        return redirect('courseEdit')
-
-
-@login_required
-def departmentAdd(request):
-    form = DepartmentForm(request.POST or None)
-    if request.method == 'POST':
-        if form.is_valid():
-            form.save()
-            return redirect('departmentAdd')
-    context = {'form': form}
-    return render(request, 'departmentAdd.html', context)
-
-
-@login_required
-def departmentEdit(request):
-    course = defaultdict(list)
-    for dept in Department.courses.through.objects.all():
-        dept_name = Department.objects.filter(
-            id=dept.department_id).values('dept_name')[0]['dept_name']
-        course_name = Course.objects.filter(
-            course_number=dept.course_id).values(
-                'course_name')[0]['course_name']
-        course[dept_name].append(course_name)
-
-    context = {'departments': Department.objects.all(), 'course': course}
-    return render(request, 'departmentEdit.html', context)
-
-
-@login_required
-def departmentDelete(request, pk):
-    dept = Department.objects.filter(pk=pk)
-    if request.method == 'POST':
-        dept.delete()
-        return redirect('departmentEdit')
-
-
-@login_required
-def sectionAdd(request):
-    form = SectionForm(request.POST or None)
-    if request.method == 'POST':
-        if form.is_valid():
-            form.save()
-            return redirect('sectionAdd')
-    context = {'form': form}
-    return render(request, 'sectionAdd.html', context)
-
-
-@login_required
-def sectionEdit(request):
-    context = {'sections': Section.objects.all()}
-    return render(request, 'sectionEdit.html', context)
-
-
-@login_required
-def sectionDelete(request, pk):
-    sec = Section.objects.filter(pk=pk)
-    if request.method == 'POST':
-        sec.delete()
-        return redirect('sectionEdit')
-
-
-
-
-'''
-Error pages
-'''
 
 def error_404(request, exception):
-    return render(request,'errors/404.html', {})
+    return render(request, 'errors/404.html', {})
 
-def error_500(request, *args, **argv):
-    return render(request,'errors/500.html', {})
+
+def error_500(request, *args, **kwargs):
+    return render(request, 'errors/500.html', {})

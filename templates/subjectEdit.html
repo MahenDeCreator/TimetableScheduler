@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+{% load index %}
+
+
+
+<fieldset class="fieldset">
+  <div class="tablink">
+    <a href="{% url 'subject_add'%}">
+      <h1 onclick="openPage('new')" id="defaultOpen">Add Subject</h1>
+    </a>
+    <h1 onclick="openPage('edit')" id="link_to_edit">Edit Subjects</h1>
+  </div>
+  <div class="tabcontent" id="edit">
+    <table class="editTable">
+      <thead>
+        <tr class="table-headers">
+          <th>Course Code</th>
+          <th>Course Name</th>
+          <th>Max students</th>
+          <th>Instructors</th>
+          <th class="empty"></th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for subject in subjects %}
+        <tr>
+          <td>{{ subject.subject_code }}</td>
+          <td>{{ subject.subject_title }}</td>
+          <td>{{ subject.max_students }}</td>
+          <td>{{ teacher|dictKey:subject.subject_code }}</td>
+          <td class="empty">
+            <form action="{% url 'delete_subject' subject.subject_code %}" method="post">
+              {% csrf_token %}
+              <input type="submit" value="X" class="cross">
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="5">No subjects found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</fieldset>
+
+{% endblock %}

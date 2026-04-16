@@ -1,37 +1,52 @@
-from django import template
+﻿from django import template
+
 register = template.Library()
 
-@register.filter
-def dictKey(d, k):
-    '''Returns the given key from a dictionary.'''
 
-    return ', '.join(d[k]) or ''
+@register.filter(name='dictKey')
+def dict_key(mapping, key):
+    """Return a joined string for the requested dictionary key."""
+    values = mapping.get(key)
+    return ', '.join(values) if values else ''
 
 
-@register.simple_tag
-def sub(s, d, w, t):
-    '''Returns the subject-teacher for a department, weekday and time period'''
-    for c in s:
-        if c.department.dept_name == d and c.meeting_time.day == w and c.meeting_time.time == t:
-            return f'{c.course.course_name} ({c.instructor.name})'
+@register.simple_tag(name='sub')
+def subject_for_slot(schedule_items, group_code, weekday, period):
+    """Return the subject and instructor associated with a time slot."""
+    from django.utils.safestring import mark_safe
+    for item in schedule_items:
+        if (
+            item.group.group_code == group_code
+            and item.time_slot.weekday == weekday
+            and item.time_slot.duration == period
+        ):
+            teacher_text = item.teacher.full_name if item.teacher else 'TBA'
+            return mark_safe(
+                f'<div class="subject">{item.subject.subject_title}</div>'
+                f'<div class="lecture">({teacher_text})</div>'
+            )
 
     return ''
 
-@register.tag
+
+@register.tag(name='active')
 def active(parser, token):
-    args = token.split_contents()
-    template_tag = args[0]
-    if len(args) < 2:
-        raise (template.TemplateSyntaxError, f'{template_tag} tag requires at least one argument')
-    return NavSelectedNode(args[1:])
+    tokens = token.split_contents()
+    if len(tokens) < 2:
+        raise template.TemplateSyntaxError(
+            f'{tokens[0]} tag requires at least one argument'
+        )
+    return NavSelectedNode(tokens[1:])
+
 
 class NavSelectedNode(template.Node):
     def __init__(self, patterns):
         self.patterns = patterns
+
     def render(self, context):
-        path = context['request'].path
-        for p in self.patterns:
-            pValue = template.Variable(p).resolve(context)
-            if path == pValue:
+        current_path = context['request'].path
+        for pattern in self.patterns:
+            resolved = template.Variable(pattern).resolve(context)
+            if current_path == resolved:
                 return 'active'
         return ''

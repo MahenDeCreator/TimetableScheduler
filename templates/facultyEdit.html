@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block content %}
+{% load static %}
+{% load index %}
+
+
+
+
+<fieldset class="fieldset">
+  <div class="tablink">
+    <a href="{% url 'faculty_add'%}">
+      <h1 onclick="openPage('new')" id="defaultOpen">Add Faculty</h1>
+    </a>
+    <h1 onclick="openPage('edit')" id="link_to_edit">Edit Faculty</h1>
+  </div>
+  <div class="tabcontent" id="edit">
+    <table class="editTable">
+      <thead>
+        <tr class="table-headers">
+          <th>Department</th>
+          <th>Courses</th>
+          <th class="empty"></th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {% for faculty in faculties %}
+        <tr>
+          <td>{{ faculty.faculty_name }}</td>
+          <td>{{ subject|dictKey:faculty.faculty_name }}</td>
+          <td class="empty">
+            <form action="{% url 'delete_faculty' faculty.pk %}" method="post">
+              {% csrf_token %}
+              <input type="submit" value="X" class="cross">
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="3">No faculties found.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</fieldset>
+
+{% endblock %}

@@ -1,9 +1,9 @@
 from django.contrib import admin
-from .models import *
+from .models import Classroom, Faculty, Group, Subject, Teacher, TimeSlot
 
-admin.site.register(Room)
-admin.site.register(Instructor)
-admin.site.register(MeetingTime)
-admin.site.register(Course)
-admin.site.register(Department)
-admin.site.register(Section)
+admin.site.register(Classroom)
+admin.site.register(Teacher)
+admin.site.register(TimeSlot)
+admin.site.register(Subject)
+admin.site.register(Faculty)
+admin.site.register(Group)

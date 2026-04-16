@@ -7,10 +7,10 @@
 
 <fieldset class="fieldset">
   <div class="tablink">
-    <a href="{% url 'roomAdd'%}">
-      <h1 onclick="openPage('new')" id="defaultOpen">Add Room</h1>
+    <a href="{% url 'classroom_add'%}">
+      <h1 onclick="openPage('new')" id="defaultOpen">Add Classroom</h1>
     </a>
-    <h1 onclick="openPage('edit')" id="link_to_edit">Edit Rooms</h1>
+    <h1 onclick="openPage('edit')" id="link_to_edit">Edit Classrooms</h1>
   </div>
   <div class="tabcontent" id="edit">
     <table class="editTable">
@@ -23,16 +23,20 @@
       </thead>
 
       <tbody>
-        {% for rm in rooms %}
+        {% for classroom in classrooms %}
         <tr>
-          <td>{{rm.r_number}}</td>
-          <td>{{rm.seating_capacity}}</td>
+          <td>{{ classroom.room_code }}</td>
+          <td>{{ classroom.capacity }}</td>
           <td class="empty">
-            <form action="{% url 'deleteroom' rm.id %}" method="post">
+            <form action="{% url 'delete_classroom' classroom.pk %}" method="post">
               {% csrf_token %}
               <input type="submit" value="X" class="cross">
             </form>
           </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="3">No classrooms found.</td>
         </tr>
         {% endfor %}
       </tbody>
